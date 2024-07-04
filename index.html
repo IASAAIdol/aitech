@@ -1,110 +1,57 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ko">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Teachable Machine Image Model</title>
+    <title>카메라 선택</title>
 </head>
 <body>
-    <div>Teachable Machine Image Model</div>
-    <button type="button" onclick="initWebcam()">웹캠 시작</button>
-    <input type="file" id="image-upload" accept="image/*" onchange="handleImageUpload(event)">
-    <div id="webcam-container"></div>
-    <div id="label-container"></div>
-    <div id="result-message"></div>
+    <h1>카메라 선택</h1>
+    <select id="cameraSelect"></select>
+    <video id="video" width="640" height="480" autoplay></video>
 
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
-    <script type="text/javascript">
-        const URL = "https://teachablemachine.withgoogle.com/models/opC3--2fG/";
+    <script>
+        const videoElement = document.getElementById('video');
+        const cameraSelect = document.getElementById('cameraSelect');
 
-        let model, webcam, labelContainer, maxPredictions;
+        // 사용 가능한 카메라 목록 가져오기
+        navigator.mediaDevices.enumerateDevices().then(devices => {
+            const videoDevices = devices.filter(device => device.kind === 'videoinput');
+            
+            videoDevices.forEach((device, index) => {
+                const option = document.createElement('option');
+                option.value = device.deviceId;
+                option.text = device.label || `Camera ${index + 1}`;
+                cameraSelect.appendChild(option);
+            });
 
-        async function initWebcam() {
-            const modelURL = URL + "model.json";
-            const metadataURL = URL + "metadata.json";
-
-            model = await tmImage.load(modelURL, metadataURL);
-            maxPredictions = model.getTotalClasses();
-
-            const flip = true;
-            webcam = new tmImage.Webcam(200, 200, flip);
-            await webcam.setup();
-            await webcam.play();
-            window.requestAnimationFrame(loop);
-
-            document.getElementById("webcam-container").appendChild(webcam.canvas);
-            labelContainer = document.getElementById("label-container");
-            for (let i = 0; i < maxPredictions; i++) {
-                labelContainer.appendChild(document.createElement("div"));
+            // 첫 번째 카메라로 비디오 스트림 시작
+            if (videoDevices.length > 0) {
+                startStream(videoDevices[0].deviceId);
             }
-        }
+        });
 
-        async function loop() {
-            webcam.update();
-            await predict(webcam.canvas);
-            window.requestAnimationFrame(loop);
-        }
+        cameraSelect.onchange = () => {
+            startStream(cameraSelect.value);
+        };
 
-        async function predict(imageElement) {
-            const prediction = await model.predict(imageElement);
-            let message = '';
+        function startStream(deviceId) {
+            if (window.stream) {
+                window.stream.getTracks().forEach(track => track.stop());
+            }
 
-            for (let i = 0; i < maxPredictions; i++) {
-                const className = prediction[i].className;
-                const probability = prediction[i].probability.toFixed(2);
-                const classPrediction = className + ": " + probability;
-                labelContainer.childNodes[i].innerHTML = classPrediction;
-
-                if (probability > 0.5) {
-                    switch (className) {
-                        case 'red':
-                            message = '빨강';
-                            break;
-                        case 'green':
-                            message = '초록';
-                            break;
-                        case 'blue':
-                        case 'yellow':
-                            message = '빨강+초록';
-                            break;
-                        case 'magenta':
-                            message = '빨강+파랑';
-                            break;
-                        case 'cyan':
-                            message = '초록+파랑';
-                            break;
-                        case 'white':
-                            message = '빨강+초록+파랑';
-                            break;
-                        case 'neutral':
-                            message = '중립';
-                            break;
-                        default:
-                            message = '알 수 없음';
-                    }
+            const constraints = {
+                video: {
+                    deviceId: deviceId ? { exact: deviceId } : undefined
                 }
-            }
+            };
 
-            document.getElementById("result-message").innerText = message;
-        }
-
-        function handleImageUpload(event) {
-            const file = event.target.files[0];
-            const reader = new FileReader();
-            reader.onload = async function () {
-                const img = new Image();
-                img.src = reader.result;
-                img.onload = async function () {
-                    const canvas = document.createElement('canvas');
-                    canvas.width = img.width;
-                    canvas.height = img.height;
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(img, 0, 0);
-                    await predict(canvas);
-                }
-            }
-            reader.readAsDataURL(file);
+            navigator.mediaDevices.getUserMedia(constraints).then(stream => {
+                window.stream = stream;
+                videoElement.srcObject = stream;
+            }).catch(error => {
+                console.error('Error accessing media devices.', error);
+            });
         }
     </script>
 </body>
