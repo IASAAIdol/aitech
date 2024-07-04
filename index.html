@@ -19,7 +19,8 @@
 </head>
 <body>
     <div>Teachable Machine Image Model</div>
-    <button type="button" onclick="initWebcam()">웹캠 시작</button>
+    <button type="button" onclick="startWebcam()">웹캠 시작</button>
+    <select id="camera-select"></select>
     <input type="file" id="image-upload" accept="image/*" onchange="handleImageUpload(event)">
     <div id="webcam-container"></div>
     <div id="image-container"></div>
@@ -31,9 +32,36 @@
     <script type="text/javascript">
         const URL = "https://teachablemachine.withgoogle.com/models/opC3--2fG/";
 
-        let model, webcam, labelContainer, maxPredictions;
+        let model, webcam, labelContainer, maxPredictions, currentStream;
 
-        async function initWebcam() {
+        async function startWebcam() {
+            const cameras = await navigator.mediaDevices.enumerateDevices();
+            const videoSelect = document.getElementById('camera-select');
+            videoSelect.innerHTML = '';
+
+            cameras.forEach(device => {
+                if (device.kind === 'videoinput') {
+                    const option = document.createElement('option');
+                    option.value = device.deviceId;
+                    option.text = device.label || `Camera ${videoSelect.length + 1}`;
+                    videoSelect.appendChild(option);
+                }
+            });
+
+            videoSelect.onchange = async () => {
+                if (currentStream) {
+                    currentStream.getTracks().forEach(track => track.stop());
+                }
+                await initWebcam(videoSelect.value);
+            };
+
+            // 웹캠을 기본값으로 시작
+            if (videoSelect.length > 0) {
+                await initWebcam(videoSelect.value);
+            }
+        }
+
+        async function initWebcam(deviceId) {
             const modelURL = URL + "model.json";
             const metadataURL = URL + "metadata.json";
 
@@ -41,13 +69,25 @@
             maxPredictions = model.getTotalClasses();
 
             const flip = true;
+            const constraints = {
+                video: {
+                    deviceId: deviceId ? { exact: deviceId } : undefined,
+                    width: 200,
+                    height: 200,
+                    facingMode: flip ? 'user' : 'environment'
+                }
+            };
+
+            currentStream = await navigator.mediaDevices.getUserMedia(constraints);
             webcam = new tmImage.Webcam(200, 200, flip);
-            await webcam.setup();
+            await webcam.setup({video: {deviceId: {exact: deviceId}}});
             await webcam.play();
             window.requestAnimationFrame(loop);
 
+            document.getElementById("webcam-container").innerHTML = '';
             document.getElementById("webcam-container").appendChild(webcam.canvas);
             labelContainer = document.getElementById("label-container");
+            labelContainer.innerHTML = '';
             for (let i = 0; i < maxPredictions; i++) {
                 labelContainer.appendChild(document.createElement("div"));
             }
@@ -78,19 +118,19 @@
                             message = '초록';
                             break;
                         case 'blue':
-                            message = '빨강+초록';
+                            message = '파랑';
                             break;
                         case 'yellow':
-                            message = '빨강+초록';
+                            message = '노랑';
                             break;
                         case 'magenta':
-                            message = '빨강+파랑';
+                            message = '마젠타';
                             break;
                         case 'cyan':
-                            message = '초록+파랑';
+                            message = '시안';
                             break;
                         case 'white':
-                            message = '빨강+초록+파랑';
+                            message = '흰색';
                             break;
                         case 'neutral':
                             message = '중립';
