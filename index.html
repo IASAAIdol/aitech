@@ -1,57 +1,120 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>카메라 선택</title>
+    <title>Teachable Machine Image Model</title>
 </head>
 <body>
-    <h1>카메라 선택</h1>
-    <select id="cameraSelect"></select>
-    <video id="video" width="640" height="480" autoplay></video>
+    <div>Teachable Machine Image Model</div>
+    <button type="button" onclick="initWebcam()">웹캠 시작</button>
+    <input type="file" id="imageUpload" accept="image/*" onchange="initImageUpload(event)">
+    <div id="webcam-container"></div>
+    <div id="label-container"></div>
+    <div id="message-box"></div>
 
-    <script>
-        const videoElement = document.getElementById('video');
-        const cameraSelect = document.getElementById('cameraSelect');
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+    <script type="text/javascript">
+        const URL = "https://teachablemachine.withgoogle.com/models/opC3--2fG/";
 
-        // 사용 가능한 카메라 목록 가져오기
-        navigator.mediaDevices.enumerateDevices().then(devices => {
-            const videoDevices = devices.filter(device => device.kind === 'videoinput');
-            
-            videoDevices.forEach((device, index) => {
-                const option = document.createElement('option');
-                option.value = device.deviceId;
-                option.text = device.label || `Camera ${index + 1}`;
-                cameraSelect.appendChild(option);
-            });
+        let model, webcam, labelContainer, maxPredictions, messageBox;
 
-            // 첫 번째 카메라로 비디오 스트림 시작
-            if (videoDevices.length > 0) {
-                startStream(videoDevices[0].deviceId);
-            }
-        });
+        async function loadModel() {
+            const modelURL = URL + "model.json";
+            const metadataURL = URL + "metadata.json";
+            model = await tmImage.load(modelURL, metadataURL);
+            maxPredictions = model.getTotalClasses();
+        }
 
-        cameraSelect.onchange = () => {
-            startStream(cameraSelect.value);
-        };
+        async function initWebcam() {
+            await loadModel();
+            const flip = true;
+            webcam = new tmImage.Webcam(200, 200, flip);
+            await webcam.setup();
+            await webcam.play();
+            window.requestAnimationFrame(loop);
 
-        function startStream(deviceId) {
-            if (window.stream) {
-                window.stream.getTracks().forEach(track => track.stop());
-            }
+            document.getElementById("webcam-container").appendChild(webcam.canvas);
+            setupLabelContainer();
+        }
 
-            const constraints = {
-                video: {
-                    deviceId: deviceId ? { exact: deviceId } : undefined
-                }
+        async function initImageUpload(event) {
+            await loadModel();
+            const file = event.target.files[0];
+            const img = document.createElement('img');
+            img.src = URL.createObjectURL(file);
+            img.width = 200;
+            img.height = 200;
+            img.onload = async () => {
+                document.getElementById("webcam-container").innerHTML = "";
+                document.getElementById("webcam-container").appendChild(img);
+                await predictImage(img);
             };
+        }
 
-            navigator.mediaDevices.getUserMedia(constraints).then(stream => {
-                window.stream = stream;
-                videoElement.srcObject = stream;
-            }).catch(error => {
-                console.error('Error accessing media devices.', error);
-            });
+        function setupLabelContainer() {
+            labelContainer = document.getElementById("label-container");
+            labelContainer.innerHTML = "";
+            for (let i = 0; i < maxPredictions; i++) {
+                labelContainer.appendChild(document.createElement("div"));
+            }
+            messageBox = document.getElementById("message-box");
+            messageBox.innerHTML = "";
+        }
+
+        async function loop() {
+            webcam.update();
+            await predict();
+            window.requestAnimationFrame(loop);
+        }
+
+        async function predict() {
+            const prediction = await model.predict(webcam.canvas);
+            showPrediction(prediction);
+        }
+
+        async function predictImage(img) {
+            const prediction = await model.predict(img);
+            showPrediction(prediction);
+        }
+
+        function showPrediction(prediction) {
+            let message = '';
+            for (let i = 0; i < maxPredictions; i++) {
+                const classPrediction = prediction[i].className + ": " + prediction[i].probability.toFixed(2);
+                labelContainer.childNodes[i].innerHTML = classPrediction;
+
+                if (prediction[i].probability > 0.5) {
+                    switch (prediction[i].className) {
+                        case 'red':
+                            message = '빨강';
+                            break;
+                        case 'green':
+                            message = '초록';
+                            break;
+                        case 'blue':
+                            message = '파랑';
+                            break;
+                        case 'yellow':
+                            message = '빨강+초록';
+                            break;
+                        case 'magenta':
+                            message = '빨강+파랑';
+                            break;
+                        case 'cyan':
+                            message = '초록+파랑';
+                            break;
+                        case 'white':
+                            message = '빨강+초록+파랑';
+                            break;
+                        case 'neutral':
+                            message = '중립';
+                            break;
+                    }
+                }
+            }
+            messageBox.innerHTML = message;
         }
     </script>
 </body>
