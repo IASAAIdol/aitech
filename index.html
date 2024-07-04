@@ -1,136 +1,128 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>카메라 선택</title>
+    <title>Teachable Machine Image Model</title>
     <style>
-        #preview {
-            display: none;
-            width: 640px;
-            height: 480px;
+        #webcam-container, #image-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 10px 0;
+        }
+        canvas, img {
+            max-width: 100%;
+            height: auto;
         }
     </style>
 </head>
 <body>
-    <h1>카메라 선택</h1>
-    <select id="cameraSelect"></select>
-    <input type="file" id="imageInput" accept="image/*">
-    <video id="video" width="640" height="480" autoplay></video>
-    <img id="preview" />
-    <button id="capture">캡쳐</button>
-    <canvas id="canvas" width="640" height="480" style="display:none;"></canvas>
+    <div>Teachable Machine Image Model</div>
+    <button type="button" onclick="initWebcam()">웹캠 시작</button>
+    <input type="file" id="image-upload" accept="image/*" onchange="handleImageUpload(event)">
+    <div id="webcam-container"></div>
+    <div id="image-container"></div>
+    <div id="label-container"></div>
+    <div id="result-message"></div>
 
-    <script>
-        const videoElement = document.getElementById('video');
-        const cameraSelect = document.getElementById('cameraSelect');
-        const imageInput = document.getElementById('imageInput');
-        const preview = document.getElementById('preview');
-        const captureButton = document.getElementById('capture');
-        const canvas = document.getElementById('canvas');
-        const context = canvas.getContext('2d');
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+    <script type="text/javascript">
+        const URL = "https://teachablemachine.withgoogle.com/models/opC3--2fG/";
 
-        // 사용 가능한 카메라 목록 가져오기
-        navigator.mediaDevices.enumerateDevices().then(devices => {
-            const videoDevices = devices.filter(device => device.kind === 'videoinput');
+        let model, webcam, labelContainer, maxPredictions;
 
-            videoDevices.forEach((device, index) => {
-                const option = document.createElement('option');
-                option.value = device.deviceId;
-                option.text = device.label || `Camera ${index + 1}`;
-                cameraSelect.appendChild(option);
-            });
+        async function initWebcam() {
+            const modelURL = URL + "model.json";
+            const metadataURL = URL + "metadata.json";
 
-            // 첫 번째 카메라로 비디오 스트림 시작
-            if (videoDevices.length > 0) {
-                startStream(videoDevices[0].deviceId);
+            model = await tmImage.load(modelURL, metadataURL);
+            maxPredictions = model.getTotalClasses();
+
+            const flip = true;
+            webcam = new tmImage.Webcam(200, 200, flip);
+            await webcam.setup();
+            await webcam.play();
+            window.requestAnimationFrame(loop);
+
+            document.getElementById("webcam-container").appendChild(webcam.canvas);
+            labelContainer = document.getElementById("label-container");
+            for (let i = 0; i < maxPredictions; i++) {
+                labelContainer.appendChild(document.createElement("div"));
             }
-        });
+        }
 
-        cameraSelect.onchange = () => {
-            if (cameraSelect.value === 'upload') {
-                videoElement.style.display = 'none';
-                preview.style.display = 'block';
-            } else {
-                videoElement.style.display = 'block';
-                preview.style.display = 'none';
-                startStream(cameraSelect.value);
+        async function loop() {
+            webcam.update();
+            await predict(webcam.canvas);
+            window.requestAnimationFrame(loop);
+        }
+
+        async function predict(imageElement) {
+            const prediction = await model.predict(imageElement);
+            let message = '';
+
+            for (let i = 0; i < maxPredictions; i++) {
+                const className = prediction[i].className;
+                const probability = prediction[i].probability.toFixed(2);
+                const classPrediction = className + ": " + probability;
+                labelContainer.childNodes[i].innerHTML = classPrediction;
+
+                if (probability > 0.5) {
+                    switch (className) {
+                        case 'red':
+                            message = '빨강';
+                            break;
+                        case 'green':
+                            message = '초록';
+                            break;
+                        case 'blue':
+                            message = '빨강+초록';
+                            break;
+                        case 'yellow':
+                            message = '빨강+초록';
+                            break;
+                        case 'magenta':
+                            message = '빨강+파랑';
+                            break;
+                        case 'cyan':
+                            message = '초록+파랑';
+                            break;
+                        case 'white':
+                            message = '빨강+초록+파랑';
+                            break;
+                        case 'neutral':
+                            message = '중립';
+                            break;
+                        default:
+                            message = '알 수 없음';
+                    }
+                }
             }
-        };
 
-        imageInput.onchange = (event) => {
+            document.getElementById("result-message").innerText = message;
+        }
+
+        function handleImageUpload(event) {
             const file = event.target.files[0];
             const reader = new FileReader();
-            reader.onload = (e) => {
-                preview.src = e.target.result;
-                preview.style.display = 'block';
-                videoElement.style.display = 'none';
-            };
+            reader.onload = async function () {
+                const img = new Image();
+                img.src = reader.result;
+                img.onload = async function () {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0);
+                    document.getElementById("image-container").innerHTML = '';
+                    document.getElementById("image-container").appendChild(canvas);
+                    await predict(canvas);
+                }
+            }
             reader.readAsDataURL(file);
-        };
-
-        function startStream(deviceId) {
-            if (window.stream) {
-                window.stream.getTracks().forEach(track => track.stop());
-            }
-
-            const constraints = {
-                video: {
-                    deviceId: deviceId ? { exact: deviceId } : undefined,
-                    facingMode: { ideal: 'environment' }  // 모바일 환경일 때 후방 카메라 기본값 설정
-                }
-            };
-
-            navigator.mediaDevices.getUserMedia(constraints).then(stream => {
-                window.stream = stream;
-                videoElement.srcObject = stream;
-            }).catch(error => {
-                console.error('Error accessing media devices.', error);
-            });
         }
-
-        captureButton.onclick = () => {
-            if (preview.style.display === 'block') {
-                context.drawImage(preview, 0, 0, canvas.width, canvas.height);
-            } else {
-                context.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
-            }
-            const dataURL = canvas.toDataURL('image/png');
-            analyzeImage(dataURL);
-        };
-
-        function analyzeImage(dataURL) {
-            const img = new Image();
-            img.src = dataURL;
-            img.onload = () => {
-                const color = getColorFromImage(img);
-                let resultMessage;
-                switch(color) {
-                    case 'red': resultMessage = '빨강'; break;
-                    case 'green': resultMessage = '초록'; break;
-                    case 'blue': resultMessage = '파랑'; break;
-                    case 'yellow': resultMessage = '빨강+초록'; break;
-                    case 'magenta': resultMessage = '빨강+파랑'; break;
-                    case 'cyan': resultMessage = '초록+파랑'; break;
-                    case 'white': resultMessage = '빨강+초록+파랑'; break;
-                    case 'neutral': resultMessage = '중립'; break;
-                    default: resultMessage = '알 수 없음'; break;
-                }
-                alert(resultMessage);
-            };
-        }
-
-        function getColorFromImage(img) {
-            // 여기서 이미지를 분석하여 색상을 반환하는 로직을 구현
-            // 예시로 'red'를 반환
-            return 'red';
-        }
-
-        // 초기화
-        const uploadOption = document.createElement('option');
-        uploadOption.value = 'upload';
-        uploadOption.text = '이미지 업로드';
-        cameraSelect.appendChild(uploadOption);
     </script>
 </body>
 </html>
